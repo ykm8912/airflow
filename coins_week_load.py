@@ -7,7 +7,7 @@ from lib.Mongo import Mongo
 dag=DAG(
     dag_id="coins_week_load",
     start_date=datetime(2023, 2, 1),
-    schedule_interval="0 15 * * 0",
+    schedule_interval="5 15 * * 0",
     catchup=True
 )
 
