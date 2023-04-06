@@ -39,24 +39,28 @@ class Mongo:
                     }
                 ])
 
-    def _find_week_time(self, col, date):
+    def _find_week_time(self, col=None, date=None, type=None):
         monday = date - timedelta(days=date.weekday()+7)
         print(f"monday : {monday.strftime('%Y-%m-%d')}")
 
+        condition_query = {"stdDt" : {"$gte": monday.strftime("%Y-%m-%d"), "$lt": date.strftime("%Y-%m-%d")}}
         if col == "day_pumping":
             code = "pumpingCode"
         elif col == "day_vol":
             code = "volCode"
         elif col == "day_cross":
             code = "crossCode"
+            if type == "goldencross":
+                condition_query["type"] = "goldencross"
+            elif type == "deadcross":
+                condition_query["type"] = "deadcross"
+            else:
+                raise ValueError("type 값이 잘못되었습니다.")
         else:
             raise ValueError("col 값이 잘못되었습니다.")
             
         return  self.db[col].find(
-                                    {
-                                        "stdDt" : {"$gte": monday.strftime("%Y-%m-%d"), "$lt": date.strftime("%Y-%m-%d")}
-                                        
-                                    }
+                                    condition_query
                                     ,{
                                         "_id": 0,
                                         "stdDt": 1,
@@ -211,7 +215,7 @@ class Mongo:
 
     def load_week_vol_time(self, date):
         try:
-            source = list(self._find_week_time("day_vol", date))
+            source = list(self._find_week_time(col="day_vol", date=date))
             if len(source) == 0:
                 print(f"week_vol_time 적재할 데이터가 없습니다.")
                 return
@@ -226,9 +230,9 @@ class Mongo:
             print(f"week_vol_time 적재 완료")
 
     def load_week_cross_time(self, date):
-        def load_week_golden_cross_time(date):
+        def load_week_golden_cross_time(date, type):
             try:
-                source = list(self._find_week_time("day_cross", date))
+                source = list(self._find_week_time(col="day_cross", date=date, type=type))
                 if len(source) == 0:
                     print(f"week_golden_cross_time 적재할 데이터가 없습니다.")
                     return
@@ -241,9 +245,9 @@ class Mongo:
                 raise Exception(e)
             else:
                 print(f"week_golden_cross_time 적재 완료")
-        def load_week_dead_cross_time(date):
+        def load_week_dead_cross_time(date, type):
             try:
-                source = list(self._find_week_time("day_cross", date))
+                source = list(self._find_week_time(col="day_cross", date=date, type=type))
                 if len(source) == 0:
                     print(f"week_dead_cross_time 적재할 데이터가 없습니다.")
                     return
@@ -257,12 +261,12 @@ class Mongo:
             else:
                 print(f"week_dead_cross_time 적재 완료")
         
-        load_week_golden_cross_time(date)
-        load_week_dead_cross_time(date)
+        load_week_golden_cross_time(date, 'goldencross')
+        load_week_dead_cross_time(date, 'deadcross')
 
     def load_week_pumping_time(self, date):
         try:
-            source = list(self._find_week_time("day_pumping", date))
+            source = list(self._find_week_time(col="day_pumping", date=date))
             if len(source) == 0:
                 print(f"week_pumping_time 적재할 데이터가 없습니다.")
                 return
