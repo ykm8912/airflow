@@ -3,6 +3,7 @@ from datetime import timedelta, datetime
 import pandas as pd
 from lib.config import MONGO_URI
 
+
 class Mongo:
     def __init__(self, db):
         self.conn = MongoClient(
@@ -10,10 +11,13 @@ class Mongo:
                                     ,uuidRepresentation='standard')
         self.db = self.conn[db]
 
+    def _drop_collection(self, col):
+        self.db[col].drop()
+
     def _find_day_yet_golden_cross(self, date):
         return self.db.day_yet_golden_cross.aggregate([
                     {
-                        '$match' : {"stdDt": {"$gte": date.strftime("%Y-%m-%d")}}
+                        '$match' : {"stdDt": {'$lt': (date + timedelta(days=1)).strftime("%Y-%m-%d")}}
                     },
                     {
                         '$group': {
@@ -22,11 +26,11 @@ class Mongo:
                     }
                 ])
 
-    def _find_max_values(self, col, type=None, min_dt=None):
+    def _find_max_values(self, col, type=None, min_dt=None, date=None):
         if col == "day_cross":
-            match = {'type' : type}
+            match = {'type' : type, "stdDt": {'$lt': (date + timedelta(days=1)).strftime("%Y-%m-%d")}}
         elif col == "day_pumping":
-            match = {"stdDt": {"$gte": min_dt.to_pydatetime().strftime("%Y-%m-%d")}}
+            match = {"stdDt": {"$gte": min_dt.to_pydatetime().strftime("%Y-%m-%d"), "$lt": (date + timedelta(days=1)).strftime("%Y-%m-%d")}}
 
         return self.db[col].aggregate([
                     {
@@ -74,12 +78,16 @@ class Mongo:
                                 )
     def _make_gc_pumping_df(self, date):
         gc_list = list(self._find_day_yet_golden_cross(date))
+        if len(gc_list) == 0:
+            return None, None
         min_dt = pd.DataFrame(gc_list)["maxCreatedTime"].min()
-        pumping_list = list(self._find_max_values(col="day_pumping", min_dt=min_dt))
+        pumping_list = list(self._find_max_values(col="day_pumping", min_dt=min_dt, date=date))
         return self._make_df(gc_list), self._make_df(pumping_list)
 
     def _make_df(self, source_list):
         df = pd.DataFrame(source_list)
+        if len(df) == 0:
+            return None
         df[['coinCode', 'koreaName', 'englishName']] = pd.DataFrame(df['_id'].tolist(), index= df.index)
         df = df.drop(['_id'], axis=1, inplace=False)
         df = df[['coinCode', 'koreaName', 'englishName', 'maxCreatedTime']]
@@ -96,13 +104,17 @@ class Mongo:
     def _merge_df(self, df_time_group, df_day_group):
         return pd.merge(df_time_group, df_day_group, on=["coinCode", "koreaName", "englishName"])
 
-    def _make_gc_dc_df(self):
-        dc_list = list(self._find_max_values(col="day_cross", type="deadcross"))
-        gc_list = list(self._find_max_values(col="day_cross", type="goldencross"))
+    def _make_gc_dc_df(self, date):
+        dc_list = list(self._find_max_values(col="day_cross", type="deadcross", date=date))
+        gc_list = list(self._find_max_values(col="day_cross", type="goldencross", date=date))
         return self._make_df(dc_list), self._make_df(gc_list)
 
     def _make_pumping_not_yet_df(self, date):
         gc_df, pumping_df = self._make_gc_pumping_df(date)
+        if gc_df is None and pumping_df is None:
+            return None
+        if pumping_df is None:
+            pumping_df = pd.DataFrame(columns=['coinCode', 'koreaName', 'englishName', 'maxCreatedTime'])
         gc_pumping_df = pd.merge(gc_df, pumping_df, on=['coinCode', 'koreaName', 'englishName'], how='left')
         pumping_not_yet_df = gc_pumping_df[gc_pumping_df['maxCreatedTime_x'] > gc_pumping_df['maxCreatedTime_y']]
         pumping_not_yet_df = pumping_not_yet_df.rename(columns={'maxCreatedTime_y': 'lastPumpingTime',
@@ -113,6 +125,10 @@ class Mongo:
     
     def _make_pumping_yet_df(self, date):
         gc_df, pumping_df = self._make_gc_pumping_df(date)
+        if gc_df is None and pumping_df is None:
+            return None
+        if pumping_df is None:
+            pumping_df = pd.DataFrame(columns=['coinCode', 'koreaName', 'englishName', 'maxCreatedTime'])
         gc_pumping_df = pd.merge(gc_df, pumping_df, on=['coinCode', 'koreaName', 'englishName'], how='left')
         pumping_yet_df = gc_pumping_df[gc_pumping_df['maxCreatedTime_x'] < gc_pumping_df['maxCreatedTime_y']]
         pumping_yet_df = pumping_yet_df.rename(columns={'maxCreatedTime_y': 'pumpingTime',
@@ -121,26 +137,34 @@ class Mongo:
         pumping_yet_df.insert(0, "stdDt", date.strftime("%Y-%m-%d"))
         return pumping_yet_df
 
-    def _make_not_yet_golden_cross_list_values(self):
-        dc_df, gc_df = self._make_gc_dc_df()
+    def _make_not_yet_golden_cross_list_values(self, date):
+        dc_df, gc_df = self._make_gc_dc_df(date)
+        if dc_df is None and gc_df is None:
+            return None
+        if gc_df is None:
+            gc_df = pd.DataFrame(columns=['coinCode', 'koreaName', 'englishName', 'maxCreatedTime'])
         dc_gc_df = pd.merge(dc_df, gc_df, on=['coinCode', 'koreaName', 'englishName'], how='left')
         gc_not_yet_df = dc_gc_df[dc_gc_df['maxCreatedTime_x'] > dc_gc_df['maxCreatedTime_y']]
         gc_not_yet_df = gc_not_yet_df.rename(columns={'maxCreatedTime_x': 'deadCrossTime'})
         gc_not_yet_df = gc_not_yet_df.drop(['maxCreatedTime_y'], axis=1, inplace=False)
         gc_not_yet_df["createdTime"] = datetime.now() + timedelta(hours=9)
-        gc_not_yet_df.insert(0, "stdDt", gc_not_yet_df["createdTime"].dt.strftime("%Y-%m-%d"))
+        gc_not_yet_df.insert(0, "stdDt", date.strftime("%Y-%m-%d"))
         gc_not_yet_df = gc_not_yet_df.sort_values(by='deadCrossTime', ascending=True)
 
         return gc_not_yet_df.to_dict('records')
     
-    def _make_yet_golden_cross_list_values(self):
-        dc_df, gc_df = self._make_gc_dc_df()
-        dc_gc_df = pd.merge(dc_df, gc_df, on=['coinCode', 'koreaName', 'englishName'], how='left')
-        gc_yet_df = dc_gc_df[dc_gc_df['maxCreatedTime_x'] < dc_gc_df['maxCreatedTime_y']]
+    def _make_yet_golden_cross_list_values(self, date):
+        gc_df, dc_df = self._make_gc_dc_df(date)
+        if gc_df is None and dc_df is None:
+            return None
+        if dc_df is None:
+            dc_df = pd.DataFrame(columns=['coinCode', 'koreaName', 'englishName', 'maxCreatedTime'])
+        gc_dc_df = pd.merge(gc_df, dc_df, on=['coinCode', 'koreaName', 'englishName'], how='left')
+        gc_yet_df = gc_dc_df[gc_dc_df['maxCreatedTime_x'] > gc_dc_df['maxCreatedTime_y']]
         gc_yet_df = gc_yet_df.rename(columns={'maxCreatedTime_y': 'goldenCrossTime'})
         gc_yet_df = gc_yet_df.drop(['maxCreatedTime_x'], axis=1, inplace=False)
         gc_yet_df["createdTime"] = datetime.now() + timedelta(hours=9)
-        gc_yet_df.insert(0, "stdDt", gc_yet_df["createdTime"].dt.strftime("%Y-%m-%d"))
+        gc_yet_df.insert(0, "stdDt", date.strftime("%Y-%m-%d"))
         gc_yet_df = gc_yet_df.sort_values(by='goldenCrossTime', ascending=True)
         
         return gc_yet_df.to_dict('records')
@@ -164,10 +188,10 @@ class Mongo:
     def load_day_pumping_not_yet(self, date):
         try:
             source = self._make_pumping_not_yet_df(date)
-            if len(source) == 0:
+            if source is None or len(source) == 0:
                 print(f"day_pumping_not_yet 적재할 데이터가 없습니다.")
                 return
-
+            self._drop_collection("day_pumping_not_yet")
             self.db["day_pumping_not_yet"].insert_many(source.to_dict('records'))
         except Exception as e:
             raise Exception(e)
@@ -177,36 +201,36 @@ class Mongo:
     def load_day_pumping_yet(self, date):
         try:
             source = self._make_pumping_yet_df(date)
-            if len(source) == 0:
+            if source is None or len(source) == 0:
                 print(f"day_pumping_yet 적재할 데이터가 없습니다.")
                 return
-
+            self._drop_collection("day_pumping_yet")
             self.db["day_pumping_yet"].insert_many(source.to_dict('records'))
         except Exception as e:
             raise Exception(e)
         else:
             print(f"day_pumping_yet 적재 완료")
 
-    def load_day_not_yet_golden_cross(self):
+    def load_day_not_yet_golden_cross(self, date):
         try:
-            source = self._make_not_yet_golden_cross_list_values()
-            if len(source) == 0:
+            source = self._make_not_yet_golden_cross_list_values(date)
+            if source is None or len(source) == 0:
                 print(f"day_not_yet_golden_cross 적재할 데이터가 없습니다.")
                 return
-
+            self._drop_collection("day_not_yet_golden_cross")
             self.db["day_not_yet_golden_cross"].insert_many(source)
         except Exception as e:
             raise Exception(e)
         else:
             print(f"day_not_yet_golden_cross 적재 완료")
 
-    def load_day_yet_golden_cross(self):
+    def load_day_yet_golden_cross(self, date):
         try:
-            source = self._make_yet_golden_cross_list_values()
-            if len(source) == 0:
+            source = self._make_yet_golden_cross_list_values(date)
+            if source is None or len(source) == 0:
                 print(f"day_yet_golden_cross 적재할 데이터가 없습니다.")
                 return
-
+            self._drop_collection("day_yet_golden_cross")
             self.db["day_yet_golden_cross"].insert_many(source)
         except Exception as e:
             raise Exception(e)

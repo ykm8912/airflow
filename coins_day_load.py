@@ -22,10 +22,11 @@ def _load_day_coins(type, **kwargs):
         Mongo("coins").load_day_coins("cross", kwargs['data_interval_start'] + timedelta(hours=9))
 
 def _load_day_golden_cross(type, **kwargs):
+    print(f"data_interval_start = {kwargs['data_interval_start']}")
     if type == "not_yet":
-        Mongo("coins").load_day_not_yet_golden_cross()
+        Mongo("coins").load_day_not_yet_golden_cross(kwargs['data_interval_start'] + timedelta(hours=9))
     elif type == "yet":
-        Mongo("coins").load_day_yet_golden_cross()
+        Mongo("coins").load_day_yet_golden_cross(kwargs['data_interval_start'] + timedelta(hours=9))
 
 def _load_day_pumping(type, **kwargs):
     print(f"data_interval_start = {kwargs['data_interval_start']}")
