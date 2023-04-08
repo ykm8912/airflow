@@ -12,8 +12,8 @@ from lib.config import MYSQL_HOST, MYSQL_USER, MYSQL_PASSWORD, MYSQL_DATABASE
 
 dag=DAG(
     dag_id="week_time_mysql_load",
-    start_date=datetime(2023, 2, 1),
-    schedule_interval="10 15 * * 0",
+    start_date=datetime(2023, 1, 23),
+    schedule_interval="15 15 * * 0",
     catchup=True,
 )
 
@@ -52,7 +52,7 @@ def _conn_mysql():
     return mysql
 
 def _load_info_to_mysql(**kwargs):
-    value_params = Mongo("coins").find_week_source_col(kwargs["target_info_table"][1], kwargs['data_interval_start'] + timedelta(hours=9))
+    value_params = Mongo("coins").find_week_source_col(kwargs["target_info_table"][1], kwargs['data_interval_start'] + timedelta(days=7, hours=9))
     mysql = _conn_mysql()
     mysql.load_week_info(kwargs["target_info_table"][0], value_params)
 
@@ -63,7 +63,7 @@ def _load_time_dtl_to_mysql(**kwargs):
         df = df.drop(columns=["signalDayList"], inplace=False)
         return df.to_dict("records")
 
-    value_params = Mongo("coins").find_week_source_col(kwargs["target_dtl_table"][1], kwargs['data_interval_start'] + timedelta(hours=9))
+    value_params = Mongo("coins").find_week_source_col(kwargs["target_dtl_table"][1], kwargs['data_interval_start'] + timedelta(days=7, hours=9))
     value_params = _make_value_params(value_params)
     mysql = _conn_mysql()
     mysql.load_week_time_dtl(kwargs["target_dtl_table"][0], value_params)
@@ -75,18 +75,18 @@ def _load_day_dtl_to_mysql(**kwargs):
         df = df.drop(columns=["signalTimeList"], inplace=False)
         return df.to_dict("records")
 
-    value_params = Mongo("coins").find_week_source_col(kwargs["target_dtl_table"][1], kwargs['data_interval_start'] + timedelta(hours=9))
+    value_params = Mongo("coins").find_week_source_col(kwargs["target_dtl_table"][1], kwargs['data_interval_start'] + timedelta(days=7, hours=9))
     value_params = _make_value_params(value_params)
     mysql = _conn_mysql()
     mysql.load_week_day_dtl(kwargs["target_dtl_table"][0], value_params)
 
 def _load_week_time(**kwargs):
     mysql = _conn_mysql()
-    mysql.load_week_time(kwargs["source_table_header"], kwargs['data_interval_start'] + timedelta(hours=9))
+    mysql.load_week_time(kwargs["source_table_header"], kwargs['data_interval_start'] + timedelta(days=7, hours=9))
 
 def _load_week_day(**kwargs):
     mysql = _conn_mysql()
-    mysql.load_week_day(kwargs["source_table_header"], kwargs['data_interval_start'] + timedelta(hours=9))
+    mysql.load_week_day(kwargs["source_table_header"], kwargs['data_interval_start'] + timedelta(days=7, hours=9))
 
 dummy_1 = DummyOperator(
     task_id = "dummy_1",

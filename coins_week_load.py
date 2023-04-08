@@ -6,7 +6,7 @@ from lib.Mongo import Mongo
 
 dag=DAG(
     dag_id="coins_week_load",
-    start_date=datetime(2023, 2, 1),
+    start_date=datetime(2023, 1, 23),
     schedule_interval="5 15 * * 0",
     catchup=True
 )
@@ -14,11 +14,11 @@ dag=DAG(
 def _load_week_coins(type, **kwargs):
     print(f"data_interval_start = {kwargs['data_interval_start']}")
     if type == "pumping":
-        Mongo("coins").load_week_pumping_time(kwargs['data_interval_start'] + timedelta(hours=9))
+        Mongo("coins").load_week_pumping_time(kwargs['data_interval_start'] + timedelta(days=7, hours=9))
     elif type == "vol":
-        Mongo("coins").load_week_vol_time(kwargs['data_interval_start'] + timedelta(hours=9))
+        Mongo("coins").load_week_vol_time(kwargs['data_interval_start'] + timedelta(days=7, hours=9))
     elif type == "cross":
-        Mongo("coins").load_week_cross_time(kwargs['data_interval_start'] + timedelta(hours=9))
+        Mongo("coins").load_week_cross_time(kwargs['data_interval_start'] + timedelta(days=7, hours=9))
 
 load_week_pumping = PythonOperator(
     task_id = "load_week_pumping",
